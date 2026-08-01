@@ -1,0 +1,22 @@
+{
+  "name": "keepguard",
+  "version": "0.1.0",
+  "description": "Autonomous wallet-defense agent: watches for risky approvals or price stop-loss conditions, decides on a protective action, and executes it onchain through KeeperHub. Exposes the same protection as a pay-per-call x402 service for other agents.",
+  "type": "module",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "bot": "node src/telegram/bot.js",
+    "x402": "node src/x402/server.js"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.0",
+    "telegraf": "^4.16.3",
+    "express": "^4.19.2",
+    "dotenv": "^16.4.5",
+    "node-fetch": "^3.3.2"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
