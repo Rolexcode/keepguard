@@ -6,8 +6,9 @@
   "main": "src/index.js",
   "scripts": {
     "start": "node src/index.js",
-    "bot": "node src/telegram/bot.js",
-    "x402": "node src/x402/server.js"
+  "bot": "node src/telegram/bot.js",
+  "x402": "node src/x402/server.js",
+  "render": "node src/renderStart.js"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.0.0",
