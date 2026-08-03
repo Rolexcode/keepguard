@@ -18,16 +18,15 @@ export function approvalWatchDescription({
   tokenContract,
   network,
   spenderWhitelist,
-  telegramChatId,
 }) {
   return (
-    `Watch wallet ${walletAddress} on chain ${network} for new ERC-20 Approval events ` +
-    `on token contract ${tokenContract}. When an Approval event fires, check if the ` +
-    `spender address is in this whitelist: [${spenderWhitelist.join(", ")}]. ` +
-    `If the spender is NOT in the whitelist, call the token contract's approve ` +
-    `function with the spender's address and amount 0, to revoke the approval. ` +
-    `After the revoke succeeds, send a Telegram notification to chat ID ` +
-    `${telegramChatId} with the spender address, the transaction hash, and gas used.`
+    `Watch token contract ${tokenContract} on chain ${network} for ERC-20 Approval events ` +
+    `where the owner field exactly equals ${walletAddress}. Ignore approvals made by other owners. ` +
+    `Check whether the spender is in this whitelist: [${spenderWhitelist.join(", ")}]. ` +
+    `If the spender is NOT in the whitelist, use the connected KeeperHub signing wallet, which must ` +
+    `equal ${walletAddress}, to call approve(spender, 0) on the token contract. ` +
+    `Keep the transaction hash, gas used, retries, and outcome in the KeeperHub execution audit trail. ` +
+    `Do not add Telegram, email, Discord, or other external notification nodes.`
   );
 }
 
@@ -39,17 +38,19 @@ export function stopLossDescription({
   entryPriceUsd,
   thresholdPct,
   stableAssetContract,
-  telegramChatId,
   scheduleCron = "*/5 * * * *",
 }) {
   return (
     `On a schedule (cron: ${scheduleCron}), read the current price from price feed ` +
-    `contract ${priceFeedContract} on chain ${network}. Compute the percent change from ` +
+    `contract ${priceFeedContract} on chain ${network}, normalizing the answer using the feed's ` +
+    `decimals value. Compute the percent change from ` +
     `an entry price of $${entryPriceUsd}. If the price has dropped more than ${thresholdPct}% ` +
-    `from entry, swap the full balance of asset ${assetContract} in wallet ${walletAddress} ` +
-    `into stable asset ${stableAssetContract} on the same chain. After the swap, send a ` +
-    `Telegram notification to chat ID ${telegramChatId} with the drawdown percentage, the ` +
-    `transaction hash, and gas used. If the price has not dropped past the threshold, do nothing.`
+    `from entry, read the asset balance of ${walletAddress}. If the balance is zero, do nothing. ` +
+    `Otherwise use the connected KeeperHub signing wallet, which must equal ${walletAddress}, ` +
+    `to swap the full available balance of asset ${assetContract} into stable asset ` +
+    `${stableAssetContract} on the same chain. Store the drawdown, transaction hash, gas used, ` +
+    `retries, and outcome in the KeeperHub execution audit trail. Do not add external notification ` +
+    `nodes. If the price has not dropped past the threshold, do nothing.`
   );
 }
 

@@ -20,6 +20,10 @@ function getClient() {
   if (clientPromise) return clientPromise;
 
   clientPromise = (async () => {
+    if (!process.env.KEEPERHUB_API_KEY) {
+      throw new Error("KEEPERHUB_API_KEY is not configured.");
+    }
+
     const url = new URL(process.env.KEEPERHUB_MCP_URL || "https://app.keeperhub.com/mcp");
     const transport = new StreamableHTTPClientTransport(url, {
       requestInit: {
@@ -44,9 +48,16 @@ function getClient() {
 
 async function callTool(toolName, args) {
   const client = await getClient();
-  logger.info(SCOPE, `calling ${toolName}`, { args });
+  logger.info(SCOPE, `calling ${toolName}`);
   const result = await client.callTool({ name: toolName, arguments: args });
-  logger.info(SCOPE, `${toolName} result`, { result });
+  logger.info(SCOPE, `${toolName} completed`, {
+    isError: Boolean(result?.isError),
+    contentBlocks: Array.isArray(result?.content) ? result.content.length : 0,
+  });
+  if (result?.isError) {
+    const message = result.content?.find((block) => block?.type === "text")?.text;
+    throw new Error(message || `${toolName} failed.`);
+  }
   return result;
 }
 
@@ -57,13 +68,17 @@ export const createWorkflow = (workflow) => callTool("create_workflow", workflow
 export const updateWorkflow = (workflowId, patch) =>
   callTool("update_workflow", { workflowId, ...patch });
 export const deleteWorkflow = (workflowId) => callTool("delete_workflow", { workflowId });
-export const validateWorkflow = (workflow) => callTool("validate_workflow", workflow);
+export const validateWorkflow = (workflowId, { deepCheck = false } = {}) =>
+  callTool("validate_workflow", { workflowId, deepCheck });
 
 // --- AI generation ------------------------------------------------------
 // The big one: describe the automation in plain English, get back real
 // nodes/edges instead of us hand-authoring the flow-graph JSON ourselves.
 export const generateWorkflow = (description) =>
-  callTool("ai_generate_workflow", { description });
+  callTool("ai_generate_workflow", {
+    prompt: description,
+    context: "Generate a Sepolia-first KeepGuard workflow. Prefer the smallest reliable graph.",
+  });
 
 // --- Execution ------------------------------------------------------------
 export const executeWorkflow = (workflowId, input = {}) =>
@@ -75,14 +90,47 @@ export const getExecution = (executionId) => callTool("get_execution", { executi
 // --- Direct on-chain execution (no workflow needed) ------------------------
 // Useful for one-off actions triggered straight from a Telegram command,
 // e.g. "revoke this approval right now" without waiting on an event trigger.
-export const executeContractCall = ({ network, contractAddress, abi, abiFunction, args = [] }) =>
-  callTool("execute_contract_call", { network, contractAddress, abi, abiFunction, args });
+export const executeContractCall = ({
+  chainId,
+  network,
+  contractAddress,
+  abi,
+  functionName,
+  abiFunction,
+  args = [],
+  simulate = false,
+  idempotencyKey,
+}) =>
+  callTool("execute_contract_call", {
+    contract_address: contractAddress,
+    chain_id: String(chainId ?? network),
+    function_name: functionName ?? abiFunction,
+    function_args: JSON.stringify(args),
+    abi: typeof abi === "string" ? abi : JSON.stringify(abi),
+    simulate,
+    ...(idempotencyKey ? { idempotency_key: idempotencyKey } : {}),
+  });
 
-export const executeTransfer = ({ network, recipientAddress, amount, tokenConfig }) =>
-  callTool("execute_transfer", { network, recipientAddress, amount, tokenConfig });
+export const executeTransfer = ({
+  chainId,
+  network,
+  recipientAddress,
+  amount,
+  tokenAddress,
+  simulate = false,
+  idempotencyKey,
+}) =>
+  callTool("execute_transfer", {
+    chain_id: String(chainId ?? network),
+    to_address: recipientAddress,
+    amount: String(amount),
+    ...(tokenAddress ? { token_address: tokenAddress } : {}),
+    simulate,
+    ...(idempotencyKey ? { idempotency_key: idempotencyKey } : {}),
+  });
 
 export const getDirectExecutionStatus = (executionId) =>
-  callTool("get_direct_execution_status", { executionId });
+  callTool("get_direct_execution_status", { execution_id: executionId });
 
 // --- Protocol actions (DeFi) — useful for the stop-loss swap ---------------
 export const searchProtocolActions = (query) => callTool("search_protocol_actions", { query });
@@ -94,4 +142,18 @@ export const listActionSchemas = (category) => callTool("list_action_schemas", {
 export const toolsDocumentation = () => callTool("tools_documentation", {});
 
 // --- Wallet integration check (required before any write action) ----------
-export const getWalletIntegration = () => callTool("get_wallet_integration", {});
+export const listIntegrations = () => callTool("list_integrations", {});
+export const getWalletIntegration = (integrationId) =>
+  callTool("get_wallet_integration", { integrationId });
+
+export async function closeMcpClient() {
+  if (!clientPromise) return;
+  const client = await clientPromise;
+  await client.close();
+  clientPromise = null;
+}
+
+export async function listAvailableTools() {
+  const client = await getClient();
+  return client.listTools();
+}

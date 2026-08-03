@@ -1,0 +1,28 @@
+services:
+  - type: web
+    name: keepguard
+    runtime: node
+    plan: free
+    buildCommand: npm ci
+    startCommand: npm run render
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: NODE_VERSION
+        value: 24
+      - key: KEEPERHUB_API_KEY
+        sync: false
+      - key: KEEPERHUB_MCP_URL
+        value: https://app.keeperhub.com/mcp
+      - key: KEEPERHUB_CHAIN
+        value: sepolia
+      - key: KEEPERHUB_ALLOW_MAINNET
+        value: "false"
+      - key: TELEGRAM_BOT_TOKEN
+        sync: false
+      - key: TELEGRAM_ALLOWED_USER_IDS
+        sync: false
+      - key: TELEGRAM_BOT_USERNAME
+        value: "@keepguardbot"
+      - key: X402_PUBLIC
+        value: "false"

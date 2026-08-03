@@ -26,12 +26,14 @@ export function assertPositiveNumber(value, label) {
 }
 
 export function validateRevokeParams(p) {
+  if (!p || typeof p !== "object") throw new Error("Protection parameters are required.");
   assertAddress(p.walletAddress, "walletAddress");
   assertAddress(p.tokenContract, "tokenContract");
   (p.spenderWhitelist || []).forEach((addr) => assertAddress(addr, "whitelist entry"));
 }
 
 export function validateStopLossParams(p) {
+  if (!p || typeof p !== "object") throw new Error("Protection parameters are required.");
   assertAddress(p.walletAddress, "walletAddress");
   assertAddress(p.assetContract, "assetContract");
   assertAddress(p.priceFeedContract, "priceFeedContract");

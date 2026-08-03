@@ -1,105 +1,90 @@
-// Exposes protection as a pay-per-call HTTP endpoint, gated by x402.
-// This turns KeepGuard from "a bot I run for myself" into infrastructure
-// another autonomous agent can pay to use.
-//
-// SECURITY — read before deploying anywhere public:
-// 1. The payment check below is a STUB. It checks that an X-PAYMENT header
-//    is present, not that a real payment happened. Until the real x402
-//    middleware (see TODO below) is wired in, this endpoint provisions
-//    workflows against your wallet for FREE to anyone who sends any value
-//    in that header. Do not point a public domain at this until that's fixed.
-// 2. Because of #1, this binds to 127.0.0.1 (localhost only) by default.
-//    Set X402_PUBLIC=true only after the real payment middleware is in.
-// 3. A basic in-memory rate limiter is included as defense in depth — it
-//    is not a substitute for #1, just a second layer.
-//
-// npm install express dotenv
-// npm install <the confirmed x402 middleware package — see x402.org docs>
+// Local preview of the future paid agent endpoint. Payment verification is
+// intentionally not claimed as complete and public binding is blocked.
 
 import "dotenv/config";
 import { fileURLToPath } from "node:url";
 import express from "express";
-// import { paymentMiddleware } from "<confirmed-x402-package>";
 import { provisionRevoke, provisionStopLoss } from "../keeperhub/provision.js";
 import { logger } from "../utils/logger.js";
 
 const SCOPE = "x402.server";
 const app = express();
-app.use(express.json());
+app.use(express.json({ limit: "32kb" }));
 
-// --- Minimal rate limiter (defense in depth, not a replacement for real auth) ---
-const hits = new Map(); // ip -> [timestamps]
+app.get("/", (_req, res) => {
+  res.json({
+    service: "KeepGuard x402 preview",
+    public: false,
+    paymentVerification: "not implemented",
+    endpoints: ["GET /health", "POST /protect"],
+  });
+});
+
+app.get("/health", (_req, res) => {
+  res.json({ ok: true, service: "keepguard-x402-preview" });
+});
+
+const hits = new Map();
 const WINDOW_MS = 60_000;
 const MAX_PER_WINDOW = 10;
 
 app.use("/protect", (req, res, next) => {
-  const ip = req.ip;
   const now = Date.now();
-  const recent = (hits.get(ip) || []).filter((t) => now - t < WINDOW_MS);
+  const recent = (hits.get(req.ip) || []).filter((time) => now - time < WINDOW_MS);
   recent.push(now);
-  hits.set(ip, recent);
-
+  hits.set(req.ip, recent);
   if (recent.length > MAX_PER_WINDOW) {
-    return res.status(429).json({ error: "Too many requests, slow down." });
+    return res.status(429).json({ error: "Too many requests. Retry in one minute." });
   }
   next();
 });
 
-// --- Payment gate (STUB — see warning above) --------------------------
+// Development-only challenge. A non-empty header is not payment proof.
 app.use("/protect", (req, res, next) => {
-  const paid = req.header("X-PAYMENT");
-  if (!paid) {
+  if (!req.header("X-PAYMENT")) {
     return res.status(402).json({
       error: "Payment required",
+      developmentPreview: true,
       priceUsdc: process.env.X402_PRICE_USDC,
-      payTo: process.env.X402_PAY_TO_ADDRESS,
+      payTo: process.env.X402_PAY_TO_ADDRESS || null,
     });
   }
   next();
 });
-// -----------------------------------------------------------------------
 
 app.post("/protect", async (req, res) => {
-  const { mode, params } = req.body;
-
+  const { mode, params } = req.body || {};
   try {
     let result;
-    if (mode === "revoke") {
-      result = await provisionRevoke(params);
-    } else if (mode === "stoploss") {
-      result = await provisionStopLoss(params);
-    } else {
-      return res.status(400).json({ error: "mode must be 'revoke' or 'stoploss'" });
-    }
+    if (mode === "revoke") result = await provisionRevoke(params);
+    else if (mode === "stoploss") result = await provisionStopLoss(params);
+    else return res.status(400).json({ error: "mode must be 'revoke' or 'stoploss'" });
 
-    logger.info(SCOPE, "provisioned protection via paid call", { mode });
-    res.json({ ok: true, workflow: result.content?.[0]?.text ?? result });
-  } catch (err) {
-    logger.error(SCOPE, "provisioning failed", { error: err.message });
-    res.status(400).json({ error: err.message });
+    logger.info(SCOPE, "provisioned protection via local preview", { mode });
+    return res.json({ ok: true, workflow: result });
+  } catch (error) {
+    logger.error(SCOPE, "provisioning failed", { error: error.message });
+    return res.status(400).json({ error: error.message });
   }
 });
 
 export function startX402Server() {
-  const port = process.env.X402_PORT || 4021;
-  const isPublic = process.env.X402_PUBLIC === "true";
-  const host = isPublic ? "0.0.0.0" : "127.0.0.1";
-
-  if (isPublic) {
-    logger.warn(
-      SCOPE,
-      "X402_PUBLIC=true — binding to all interfaces. Confirm the real payment " +
-        "middleware is wired in before this is reachable from the internet."
+  if (process.env.X402_PUBLIC === "true") {
+    throw new Error(
+      "Refusing to expose the x402 preview publicly until real payment verification is implemented."
     );
   }
-
-  app.listen(port, host, () =>
-    logger.info(SCOPE, `x402 server listening on ${host}:${port}`)
+  const port = process.env.X402_PORT || 4021;
+  app.listen(port, "127.0.0.1", () =>
+    logger.info(SCOPE, `x402 preview listening on 127.0.0.1:${port}`)
   );
 }
 
-// Runs the server when this file is executed directly (`node src/x402/server.js`
-// or `npm run x402`) — not just when imported and started from index.js.
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
-  startX402Server();
+  try {
+    startX402Server();
+  } catch (error) {
+    logger.error(SCOPE, "x402 preview failed to start", { error: error.message });
+    process.exitCode = 1;
+  }
 }

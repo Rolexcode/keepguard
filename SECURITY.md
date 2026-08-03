@@ -57,11 +57,10 @@ anyone reachable over the network could provision workflows for free.
   by default.
 - A basic rate limiter (10 requests/minute/IP) is in as a second layer.
 
-**Still open, and clearly marked in the code:** the payment verification
-itself is still a placeholder. Before this endpoint is ever exposed
-publicly (`X402_PUBLIC=true`), the real x402 middleware needs to be wired
-in — see the `TODO` at the top of `src/x402/server.js`. Don't flip that
-flag until it's done.
+**Still open, and clearly marked in the code:** payment verification is a
+placeholder. The server now refuses to start when `X402_PUBLIC=true`;
+public exposure requires verified x402 middleware or KeeperHub marketplace
+settlement.
 
 ### 3. Input validation
 
@@ -89,15 +88,14 @@ address, a nonsense percentage) earlier, with a clearer error.
 
 Being direct about this rather than burying it:
 
-1. **x402 payment verification is not implemented**, only stubbed. Don't
-   set `X402_PUBLIC=true` until it is.
-2. **`ai_generate_workflow`'s exact persistence behavior isn't confirmed**
-   — whether it saves a workflow itself or only returns a draft. Check
-   `list_workflows` after your first real run so you're not accidentally
-   running two copies of the same protection.
-3. **No automated tests yet.** Each file was syntax-checked
-   (`node --check`) and reviewed by hand, but there's no test suite
-   exercising the actual KeeperHub calls.
+1. **x402 payment verification is not implemented.** Public startup is
+   blocked until it is replaced with verified settlement.
+2. **Live KeeperHub response shapes still require a Sepolia integration
+   test.** The response normalizer supports both a persisted AI workflow
+   and a returned draft, but the active deployment must be confirmed.
+3. **Automated tests cover local safety logic, not KeeperHub itself.** Run
+   `npm test` for response parsing, wallet binding, validation ordering, and
+   the mainnet lock. Authenticated MCP behavior needs the Sepolia test.
 4. **Rate limiting is in-memory and per-process** — fine for a hackathon
    demo, not durable across restarts or multiple instances.
 
