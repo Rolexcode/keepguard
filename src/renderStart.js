@@ -48,7 +48,12 @@ server.listen(port, "0.0.0.0", () => {
   logger.info(SCOPE, `health server listening on 0.0.0.0:${port}`);
 });
 
-startBot()
+startBot({
+  onRuntimeError: (error) => {
+    botReady = false;
+    botError = error.message;
+  },
+})
   .then(() => {
     botReady = true;
     logger.info(SCOPE, "Telegram bot is ready");

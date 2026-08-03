@@ -471,8 +471,11 @@ function getBot() {
   return bot;
 }
 
-export async function startBot() {
+export async function startBot({ onRuntimeError } = {}) {
   const instance = getBot();
+  // Authenticate before reporting readiness. Telegraf's launch() promise stays
+  // pending for the entire polling lifetime, so it must run in the background.
+  instance.botInfo = await instance.telegram.getMe();
   await instance.telegram.setMyCommands([
     { command: "start", description: "Open the guided KeepGuard menu" },
     { command: "status", description: "Check KeeperHub and Sepolia readiness" },
@@ -482,8 +485,12 @@ export async function startBot() {
     { command: "audit", description: "View a KeeperHub execution trail" },
     { command: "help", description: "Show commands and safety guidance" },
   ]);
-  await instance.launch();
-  logger.info(SCOPE, "bot started");
+  instance.launch().catch((error) => {
+    logger.error(SCOPE, "Telegram polling stopped", { error: error.message });
+    onRuntimeError?.(error);
+    process.exitCode = 1;
+  });
+  logger.info(SCOPE, "bot started", { username: instance.botInfo.username });
   process.once("SIGINT", () => instance.stop("SIGINT"));
   process.once("SIGTERM", () => instance.stop("SIGTERM"));
   return instance;
