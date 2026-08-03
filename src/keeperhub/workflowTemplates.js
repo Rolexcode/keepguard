@@ -30,6 +30,193 @@ export function approvalWatchDescription({
   );
 }
 
+const APPROVAL_EVENT_ABI = JSON.stringify([
+  {
+    anonymous: false,
+    inputs: [
+      { indexed: true, internalType: "address", name: "owner", type: "address" },
+      { indexed: true, internalType: "address", name: "spender", type: "address" },
+      { indexed: false, internalType: "uint256", name: "value", type: "uint256" },
+    ],
+    name: "Approval",
+    type: "event",
+  },
+]);
+
+const APPROVE_FUNCTION_ABI = JSON.stringify([
+  {
+    inputs: [
+      { internalType: "address", name: "spender", type: "address" },
+      { internalType: "uint256", name: "amount", type: "uint256" },
+    ],
+    name: "approve",
+    outputs: [{ internalType: "bool", name: "", type: "bool" }],
+    stateMutability: "nonpayable",
+    type: "function",
+  },
+]);
+
+function caseInsensitiveAddressPattern(address) {
+  const escaped = [...address].map((character) => {
+    if (/[a-fx]/i.test(character)) return `[${character.toLowerCase()}${character.toUpperCase()}]`;
+    return character;
+  }).join("");
+  return `^${escaped}$`;
+}
+
+function conditionNode(id, label, leftOperand, operator, rightOperand, x) {
+  return {
+    id,
+    type: "action",
+    position: { x, y: 220 },
+    data: {
+      label,
+      description: label,
+      type: "action",
+      status: "idle",
+      config: {
+        actionType: "Condition",
+        condition: `${leftOperand} ${operator} ${JSON.stringify(rightOperand)}`,
+        conditionConfig: {
+          group: {
+            id: `${id}-group`,
+            logic: "AND",
+            rules: [{
+              id: `${id}-rule`,
+              leftOperand,
+              operator,
+              rightOperand,
+            }],
+          },
+        },
+      },
+    },
+  };
+}
+
+// This fixed graph uses documented KeeperHub node schemas and does not depend
+// on the optional AI workflow generator being enabled for the organization.
+export function buildApprovalWatchWorkflow({
+  walletAddress,
+  tokenContract,
+  network,
+  spenderWhitelist = [],
+}) {
+  const triggerId = "approval-trigger";
+  const ownerConditionId = "owner-condition";
+  const valueConditionId = "value-condition";
+  const whitelistConditionId = "whitelist-condition";
+  const revokeId = "revoke-approval";
+  // Event arguments are spread onto the trigger output by KeeperHub.
+  const ownerRef = `{{@${triggerId}:Approval detected.owner}}`;
+  const spenderRef = `{{@${triggerId}:Approval detected.spender}}`;
+  const valueRef = `{{@${triggerId}:Approval detected.value}}`;
+
+  const nodes = [
+    {
+      id: triggerId,
+      type: "trigger",
+      position: { x: 0, y: 220 },
+      data: {
+        label: "Approval detected",
+        description: "Watch the selected token for Approval events",
+        type: "trigger",
+        status: "idle",
+        config: {
+          triggerType: "Event",
+          network,
+          contractAddress: tokenContract,
+          contractABI: APPROVAL_EVENT_ABI,
+          eventName: "Approval",
+        },
+      },
+    },
+    conditionNode(
+      ownerConditionId,
+      "Approval belongs to protected wallet",
+      ownerRef,
+      "matchesRegex",
+      caseInsensitiveAddressPattern(walletAddress),
+      300
+    ),
+    conditionNode(
+      valueConditionId,
+      "Allowance is greater than zero",
+      valueRef,
+      ">",
+      "0",
+      600
+    ),
+    {
+      id: revokeId,
+      type: "action",
+      position: { x: spenderWhitelist.length ? 1200 : 900, y: 220 },
+      data: {
+        label: "Revoke untrusted approval",
+        description: "Reset the detected spender's allowance to zero",
+        type: "action",
+        status: "idle",
+        config: {
+          actionType: "web3/write-contract",
+          network,
+          contractAddress: tokenContract,
+          abi: APPROVE_FUNCTION_ABI,
+          abiFunction: "approve",
+          functionArgs: JSON.stringify([spenderRef, "0"]),
+        },
+      },
+    },
+  ];
+
+  const edges = [
+    { id: "approval-to-owner", source: triggerId, target: ownerConditionId },
+    {
+      id: "owner-to-value",
+      source: ownerConditionId,
+      target: valueConditionId,
+      sourceHandle: "true",
+    },
+  ];
+
+  if (spenderWhitelist.length) {
+    const whitelistPattern = `^(?:${spenderWhitelist
+      .map(caseInsensitiveAddressPattern)
+      .map((pattern) => pattern.slice(1, -1))
+      .join("|")})$`;
+    nodes.splice(nodes.length - 1, 0, conditionNode(
+      whitelistConditionId,
+      "Spender is trusted",
+      spenderRef,
+      "matchesRegex",
+      whitelistPattern,
+      900
+    ));
+    edges.push(
+      {
+        id: "value-to-whitelist",
+        source: valueConditionId,
+        target: whitelistConditionId,
+        sourceHandle: "true",
+      },
+      {
+        id: "untrusted-to-revoke",
+        source: whitelistConditionId,
+        target: revokeId,
+        sourceHandle: "false",
+      }
+    );
+  } else {
+    edges.push({
+      id: "value-to-revoke",
+      source: valueConditionId,
+      target: revokeId,
+      sourceHandle: "true",
+    });
+  }
+
+  return { nodes, edges };
+}
+
 export function stopLossDescription({
   walletAddress,
   assetContract,

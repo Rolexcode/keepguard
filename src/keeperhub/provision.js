@@ -9,7 +9,12 @@ import {
   updateWorkflow,
   validateWorkflow,
 } from "./mcpClient.js";
-import { approvalWatchDescription, stopLossDescription, toChainId } from "./workflowTemplates.js";
+import {
+  approvalWatchDescription,
+  buildApprovalWatchWorkflow,
+  stopLossDescription,
+  toChainId,
+} from "./workflowTemplates.js";
 import { validateRevokeParams, validateStopLossParams } from "../utils/validate.js";
 import { logger } from "../utils/logger.js";
 import {
@@ -87,16 +92,16 @@ async function resolveKeeperHubWallet(requestedAddress, deps) {
   return requestedAddress || uniqueAddresses[0];
 }
 
-async function generateCreateValidateAndEnable(description, name, deps) {
-  const generated = await deps.generateWorkflow(description);
-  let workflowId = extractWorkflowId(generated);
+async function generateCreateValidateAndEnable(description, name, deps, fixedDraft) {
+  const generated = fixedDraft ? null : await deps.generateWorkflow(description);
+  let workflowId = generated ? extractWorkflowId(generated) : null;
 
   // Some KeeperHub versions persist AI-generated workflows and return an ID;
   // others return a draft. Support both without creating a duplicate.
   if (workflowId) {
     await deps.updateWorkflow(workflowId, { name, description, enabled: false });
   } else {
-    const draft = extractWorkflowDraft(generated);
+    const draft = fixedDraft || extractWorkflowDraft(generated);
     const created = await deps.createWorkflow({
       name,
       description,
@@ -137,10 +142,12 @@ export async function provisionRevoke(params, dependencyOverrides = {}) {
   const resolvedParams = { ...params, walletAddress };
   validateRevokeParams(resolvedParams);
   const description = approvalWatchDescription({ ...resolvedParams, network });
+  const fixedDraft = buildApprovalWatchWorkflow({ ...resolvedParams, network });
   const result = await generateCreateValidateAndEnable(
     description,
     `KeepGuard — Approval Watch — ${walletAddress.slice(0, 8)}`,
-    deps
+    deps,
+    fixedDraft
   );
   return { ...result, walletAddress, network, mode: "revoke" };
 }

@@ -46,10 +46,6 @@ function helpText() {
     "/audit <executionId> — inspect an execution",
     "/help — show this guide",
     "",
-    "Advanced setup",
-    "/protect_revoke — custom approval protection",
-    "/protect_stoploss — custom stop-loss protection",
-    "",
     "No workflow is enabled without a preview and explicit confirmation.",
   ].join("\n");
 }
@@ -134,12 +130,29 @@ function registerHandlers(instance) {
       Markup.inlineKeyboard([
         [Markup.button.callback("Run the Sepolia demo", "kg_demo")],
         [Markup.button.callback("Check readiness", "kg_status")],
-        [Markup.button.callback("Set up approval protection", "kg_help:revoke")],
-        [Markup.button.callback("Set up stop-loss protection", "kg_help:stoploss")],
+        [Markup.button.callback("Advanced settings", "kg_advanced")],
       ])
     )
   );
   instance.help((ctx) => ctx.reply(helpText()));
+  const showAdvanced = (ctx) =>
+    ctx.reply(
+      [
+        "Advanced settings",
+        "",
+        "These options are for users who already know their token, price-feed, and protocol addresses.",
+        "The guided /demo is recommended for first-time testing.",
+      ].join("\n"),
+      Markup.inlineKeyboard([
+        [Markup.button.callback("Custom approval protection", "kg_help:revoke")],
+        [Markup.button.callback("Custom stop-loss protection", "kg_help:stoploss")],
+      ])
+    );
+  instance.command("advanced", showAdvanced);
+  instance.action("kg_advanced", async (ctx) => {
+    await ctx.answerCbQuery();
+    await showAdvanced(ctx);
+  });
   instance.action("kg_help:revoke", async (ctx) => {
     await ctx.answerCbQuery();
     await ctx.reply(revokeUsage());
@@ -154,12 +167,12 @@ function registerHandlers(instance) {
       [
         "Guided Sepolia demo",
         "",
-        "You do not need to find a token contract or understand trusted spenders.",
+        "No addresses or blockchain setup knowledge are required.",
         "",
         "KeepGuard will:",
-        "1. Use a standard WETH test contract on Sepolia.",
+        "1. Use a verified test token on Sepolia.",
         "2. Watch your verified KeeperHub wallet.",
-        "3. Simulate a harmless approval of 1 wei to a burn address.",
+        "3. Simulate the smallest possible temporary permission to a safe test address.",
         "4. Ask you again before broadcasting the Sepolia approval.",
         "5. Detect it and revoke it through the KeeperHub workflow.",
         "",
@@ -187,8 +200,8 @@ function registerHandlers(instance) {
         "",
         "Network: Sepolia testnet",
         "Wallet: your verified KeeperHub signing wallet",
-        "Asset: standard Sepolia WETH test contract",
-        "Rule: revoke approvals to the demo burn address",
+        "Asset: verified Sepolia test token",
+        "Rule: revoke the temporary permission created by this demo",
         "Setup transaction: none",
         "Later test transaction: approve 1 wei of allowance; no token transfer",
       ].join("\n"),
@@ -206,15 +219,17 @@ function registerHandlers(instance) {
           "",
           `Network: ${networkLabel}`,
           `KeeperHub API: ${process.env.KEEPERHUB_API_KEY ? "configured" : "missing"}`,
-          `Signing wallet: ${readiness.ready ? shortAddress(readiness.walletAddress) : "not connected"}`,
+          `Signing wallet: ${readiness.ready ? readiness.walletAddress : "not connected"}`,
+          readiness.ready
+            ? `Wallet explorer: https://sepolia.etherscan.io/address/${readiness.walletAddress}`
+            : null,
           `Bot access control: ${process.env.TELEGRAM_ALLOWED_USER_IDS ? "enabled" : "missing"}`,
           `Mainnet lock: ${process.env.KEEPERHUB_ALLOW_MAINNET === "true" ? "disabled" : "enabled"}`,
-          "x402: local preview only; real payment verification is not enabled",
           "",
           readiness.ready
             ? "Ready for a Sepolia protection preview. No transaction is sent by /status."
             : "Connect a KeeperHub signing wallet before creating protection.",
-        ].join("\n")
+        ].filter(Boolean).join("\n")
       );
     } catch (error) {
       logger.error(SCOPE, "readiness check failed", { error: error.message });
@@ -323,7 +338,8 @@ function registerHandlers(instance) {
         "",
         `Mode: ${pending.demo ? "guided approval demo" : pending.mode === "revoke" ? "approval watch" : "stop-loss"}`,
         `Network: ${result.network === "11155111" ? "Sepolia (11155111)" : result.network}`,
-        `Wallet: ${shortAddress(result.walletAddress)}`,
+        `Wallet: ${result.walletAddress}`,
+        `Wallet explorer: https://sepolia.etherscan.io/address/${result.walletAddress}`,
         `Workflow: ${result.workflowId}`,
         "Validation: passed",
         "Status: enabled",
@@ -378,7 +394,7 @@ function registerHandlers(instance) {
           "Simulation passed",
           "",
           "The next confirmation broadcasts one real Sepolia transaction through KeeperHub:",
-          "Action: approve 1 wei of WETH allowance to the demo burn address",
+          "Action: create the smallest possible WETH test allowance to a safe test address",
           "Token transfer: none",
           "Cost: Sepolia test gas only",
           "",
@@ -480,8 +496,7 @@ export async function startBot({ onRuntimeError } = {}) {
     { command: "start", description: "Open the guided KeepGuard menu" },
     { command: "status", description: "Check KeeperHub and Sepolia readiness" },
     { command: "demo", description: "Run the guided Sepolia demo" },
-    { command: "protect_revoke", description: "Preview approval protection" },
-    { command: "protect_stoploss", description: "Preview stop-loss protection" },
+    { command: "advanced", description: "Open custom protection settings" },
     { command: "audit", description: "View a KeeperHub execution trail" },
     { command: "help", description: "Show commands and safety guidance" },
   ]);

@@ -51,9 +51,11 @@ test("approval protection creates disabled, validates by ID, then enables", asyn
 
   assert.equal(result.workflowId, "wf_test_123");
   assert.equal(result.walletAddress, WALLET);
-  assert.deepEqual(calls.map(([name]) => name), ["integrations", "wallet", "generate", "create", "validate", "update"]);
-  assert.equal(calls[3][1].enabled, false);
-  assert.deepEqual(calls[5].slice(1), ["wf_test_123", { enabled: true }]);
+  assert.deepEqual(calls.map(([name]) => name), ["integrations", "wallet", "create", "validate", "update"]);
+  assert.equal(calls[2][1].enabled, false);
+  assert.equal(calls[2][1].nodes[0].data.config.triggerType, "Event");
+  assert.equal(calls[2][1].nodes.at(-1).data.config.actionType, "web3/write-contract");
+  assert.deepEqual(calls[4].slice(1), ["wf_test_123", { enabled: true }]);
 });
 
 test("a wallet mismatch is rejected before workflow generation", async () => {

@@ -35,6 +35,13 @@ test("workflow and wallet helpers extract current response shapes", () => {
   );
 });
 
+test("workflow IDs accept KeeperHub's current cuid format", () => {
+  assert.equal(
+    extractWorkflowId(content({ id: "00ed9oh1y2l5t6mg7cf67" })),
+    "00ed9oh1y2l5t6mg7cf67"
+  );
+});
+
 test("validation helper returns typed KeeperHub errors", () => {
   assert.equal(validationFailureMessage(content({ result: { valid: true } })), null);
   assert.equal(

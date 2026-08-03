@@ -56,7 +56,7 @@ export function extractWorkflowId(raw) {
     value?.id,
   ];
   return candidates.find(
-    (candidate) => typeof candidate === "string" && /^wf[_-]/i.test(candidate)
+    (candidate) => typeof candidate === "string" && candidate.trim().length > 0
   );
 }
 
